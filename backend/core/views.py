@@ -47,13 +47,32 @@ def bling_callback(request):
             "redirect_uri": redirect_uri
         }
         
+        # Headers para a requisição
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json"
+        }
+        
         # Log das informações (exceto secrets)
         logger.info(f"Realizando requisição OAuth para o Bling com redirect_uri={redirect_uri}")
+        logger.info(f"Código recebido: {code}")
         
         # Fazendo a requisição para obter o token
         try:
-            response = requests.post("https://www.bling.com.br/Api/v3/oauth/token", data=data)
-            response.raise_for_status()  # Lança exceção para respostas de erro HTTP
+            # Usando o formato x-www-form-urlencoded em vez de JSON
+            response = requests.post(
+                "https://www.bling.com.br/Api/v3/oauth/token", 
+                data=data,
+                headers=headers
+            )
+            
+            # Log da resposta para diagnóstico
+            logger.info(f"Status Code: {response.status_code}")
+            logger.info(f"Response Headers: {response.headers}")
+            
+            if response.status_code != 200:
+                logger.error(f"Resposta de erro do Bling: {response.text}")
+                return HttpResponse(f"Erro ao obter o token: {response.status_code} - {response.text}", status=500)
             
             # Extrai os dados do token
             token_data = response.json()
@@ -78,6 +97,10 @@ def bling_callback(request):
             
         except requests.exceptions.RequestException as e:
             logger.error(f"Erro na requisição para o Bling: {str(e)}")
+            # Log adicional para ajudar no diagnóstico
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Detalhes da resposta: {e.response.text}")
+            
             return HttpResponse(f"Erro ao obter o token: {str(e)}", status=500)
     
     except Exception as e:
