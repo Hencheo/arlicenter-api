@@ -55,4 +55,7 @@ diretorio
 instrucoes-criticas.txt
 REGRA_DE_FOCO.txt
 REGRA_NAO_DUPLICAR.txt
-proposta_arlicenter.txt 
+proposta_arlicenter.txt
+
+# Exceções
+!backend/requirements.txt 
