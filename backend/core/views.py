@@ -3,6 +3,7 @@ import requests
 import json
 import os
 import logging
+import base64
 from datetime import datetime
 from pathlib import Path
 from django.conf import settings
@@ -38,17 +39,21 @@ def bling_callback(request):
             logger.error("Credenciais do Bling não configuradas")
             return HttpResponse("Configurações de API do Bling não definidas. Configure as variáveis de ambiente BLING_CLIENT_ID e BLING_CLIENT_SECRET.", status=500)
         
-        # Dados para a requisição POST
+        # Dados para a requisição POST - não incluindo client_id e client_secret no corpo
         data = {
-            "client_id": client_id,
-            "client_secret": client_secret,
             "code": code,
             "grant_type": grant_type,
             "redirect_uri": redirect_uri
         }
         
-        # Headers para a requisição
+        # Preparando a autenticação Basic
+        auth_str = f"{client_id}:{client_secret}"
+        auth_bytes = auth_str.encode('ascii')
+        auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
+        
+        # Headers para a requisição com autenticação Basic
         headers = {
+            "Authorization": f"Basic {auth_b64}",
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json"
         }
@@ -56,10 +61,11 @@ def bling_callback(request):
         # Log das informações (exceto secrets)
         logger.info(f"Realizando requisição OAuth para o Bling com redirect_uri={redirect_uri}")
         logger.info(f"Código recebido: {code}")
+        logger.info(f"Usando autenticação Basic nos cabeçalhos")
         
         # Fazendo a requisição para obter o token
         try:
-            # Usando o formato x-www-form-urlencoded em vez de JSON
+            # Usando autenticação Basic nos cabeçalhos em vez de credenciais no corpo
             response = requests.post(
                 "https://www.bling.com.br/Api/v3/oauth/token", 
                 data=data,
