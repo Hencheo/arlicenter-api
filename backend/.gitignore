@@ -40,4 +40,9 @@ venv.bak/
 # Tokens
 bling_tokens/
 *.json
-*.txt 
+*.txt
+
+# ExceÃ§Ãµes
+!requirements.txt
+# Exceções
+!requirements.txt
