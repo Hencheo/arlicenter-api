@@ -8,7 +8,24 @@ from datetime import datetime
 from pathlib import Path
 from django.conf import settings
 from django.http import JsonResponse
-from .token_manager import TokenManager
+
+# Importação com tratamento de erro
+try:
+    from core.token_manager import TokenManager
+except ImportError as e:
+    logging.error(f"Erro ao importar TokenManager: {e}")
+    # Classe temporária para evitar falhas completas caso a importação falhe
+    class TokenManager:
+        def __init__(self):
+            logging.error("TokenManager não pôde ser carregado corretamente.")
+            
+        def create_token_document(self, token_data):
+            logging.error("Método create_token_document chamado, mas TokenManager não está disponível.")
+            return None
+            
+        def get_active_token(self):
+            logging.error("Método get_active_token chamado, mas TokenManager não está disponível.")
+            return None
 
 # Configurar logger
 logger = logging.getLogger(__name__)
