@@ -23,4 +23,5 @@ urlpatterns = [
     path("", index, name="home"),
     path("admin/", admin.site.urls),
     path("auth/", include("core.urls")),
+    path("", include("core.urls")),  # Inclui as rotas de API
 ]
