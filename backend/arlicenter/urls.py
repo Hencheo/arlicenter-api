@@ -17,11 +17,13 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
-from core.views import index
+# Removendo a importação direta que está causando erro
+# from core.views import index
 
 urlpatterns = [
-    path("", index, name="home"),
+    # Usar include para todas as rotas, incluindo a raiz
+    # path("", index, name="home"),
+    path("", include("core.urls")),  # Já inclui o index
     path("admin/", admin.site.urls),
     path("auth/", include("core.urls")),
-    path("", include("core.urls")),  # Inclui as rotas de API
 ]
