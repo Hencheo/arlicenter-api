@@ -277,3 +277,57 @@ def get_bling_contatos(request):
     Endpoint: /api/contatos/
     """
     return bling_api_request(request, "contatos", "GET")
+
+# Função de teste para buscar contato por CPF e suas contas a receber
+def teste_busca_por_cpf(request):
+    """
+    Testa a busca de contato por CPF e depois busca as contas a receber deste contato.
+    Endpoint: /api/teste/cpf/?cpf=NUMERO_CPF
+    """
+    try:
+        # Obtém o CPF da requisição
+        cpf = request.GET.get('cpf')
+        if not cpf:
+            return JsonResponse({"error": "CPF não fornecido"}, status=400)
+        
+        logger.info(f"Testando busca por CPF: {cpf}")
+        
+        # 1. Busca o contato pelo CPF
+        contatos_response = bling_api_request(request, f"contatos?numeroDocumento={cpf}", "GET")
+        
+        # Se a resposta não for um JsonResponse, retorna ela diretamente
+        if not isinstance(contatos_response, JsonResponse):
+            return contatos_response
+        
+        # Converte a resposta para dicionário Python
+        contatos_data = json.loads(contatos_response.content)
+        
+        # Verifica se encontrou contatos
+        if not contatos_data or not contatos_data.get('data'):
+            return JsonResponse({"error": "Nenhum contato encontrado com este CPF"}, status=404)
+        
+        # Extrai o ID do primeiro contato encontrado
+        contato_id = contatos_data['data'][0]['id']
+        logger.info(f"Contato encontrado com ID: {contato_id}")
+        
+        # 2. Busca as contas a receber deste contato
+        contas_response = bling_api_request(request, f"contas/receber?idContato={contato_id}", "GET")
+        
+        # Se a resposta não for um JsonResponse, retorna ela diretamente
+        if not isinstance(contas_response, JsonResponse):
+            return contas_response
+        
+        # Converte a resposta para dicionário Python
+        contas_data = json.loads(contas_response.content)
+        
+        # Monta a resposta com os dados do contato e suas contas
+        resultado = {
+            "contato": contatos_data['data'][0],
+            "contas_a_receber": contas_data.get('data', [])
+        }
+        
+        return JsonResponse(resultado)
+        
+    except Exception as e:
+        logger.error(f"Erro ao testar busca por CPF: {str(e)}")
+        return JsonResponse({"error": f"Erro ao testar busca por CPF: {str(e)}"}, status=500)
