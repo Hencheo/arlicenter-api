@@ -29,11 +29,21 @@ def get_firebase_credentials_path():
     Returns:
         str: Caminho absoluto para o arquivo de credenciais
     """
-    # Se o caminho estiver definido nas configurações
-    if hasattr(settings, 'FIREBASE_CREDENTIALS_PATH') and settings.FIREBASE_CREDENTIALS_PATH:
-        return settings.FIREBASE_CREDENTIALS_PATH
+    # Lista de possíveis locais para o arquivo de credenciais
+    possible_paths = [
+        settings.FIREBASE_CREDENTIALS_PATH,  # Configuração principal
+        os.path.join(settings.BASE_DIR, 'firebase-credentials.json'),  # Raiz do backend
+        os.path.join(settings.BASE_DIR, 'credentials', 'firebase-credentials.json'),  # Pasta credentials
+        os.path.join(settings.BASE_DIR, '..', 'arlicenter-teste-firebase-adminsdk-fbsvc-306d326afc.json')  # Raiz do projeto
+    ]
     
-    # Se temos as credenciais como string JSON em uma variável de ambiente
+    # Verifica se algum dos caminhos existe
+    for path in possible_paths:
+        if os.path.exists(path):
+            logger.info(f"Arquivo de credenciais do Firebase encontrado em: {path}")
+            return path
+    
+    # Se não encontrou, tenta criar a partir da variável de ambiente
     firebase_credentials_json = os.environ.get('FIREBASE_CREDENTIALS_JSON')
     if firebase_credentials_json:
         try:
@@ -45,7 +55,13 @@ def get_firebase_credentials_path():
             credentials_path = credentials_dir / 'firebase-credentials.json'
             
             # Converter a string JSON em um objeto Python
-            credentials_data = json.loads(firebase_credentials_json)
+            try:
+                credentials_data = json.loads(firebase_credentials_json)
+            except json.JSONDecodeError:
+                logger.error("Erro ao decodificar JSON das credenciais Firebase. Verificando se é uma string escapada.")
+                # Tenta remover caracteres de escape extras que podem ter sido adicionados
+                cleaned_json = firebase_credentials_json.replace('\\"', '"').replace('\\n', '\n')
+                credentials_data = json.loads(cleaned_json)
             
             # Salvar no arquivo
             with open(credentials_path, 'w') as f:
@@ -57,8 +73,27 @@ def get_firebase_credentials_path():
         except Exception as e:
             logger.error(f"Erro ao processar credenciais do Firebase: {str(e)}")
     
-    # Local padrão se nada funcionar
-    default_path = os.path.join(settings.BASE_DIR, 'credentials', 'firebase-credentials.json')
+    # Tentativa final - copiar o arquivo do diretório principal para o backend
+    try:
+        source_path = os.path.join(os.path.dirname(settings.BASE_DIR), 'arlicenter-teste-firebase-adminsdk-fbsvc-306d326afc.json')
+        target_path = os.path.join(settings.BASE_DIR, 'firebase-credentials.json')
+        
+        if os.path.exists(source_path):
+            # Lê o conteúdo do arquivo fonte
+            with open(source_path, 'r') as source_file:
+                credentials_data = json.load(source_file)
+            
+            # Escreve no arquivo de destino
+            with open(target_path, 'w') as target_file:
+                json.dump(credentials_data, target_file)
+                
+            logger.info(f"Arquivo de credenciais copiado para {target_path}")
+            return target_path
+    except Exception as e:
+        logger.error(f"Erro ao copiar arquivo de credenciais: {str(e)}")
+    
+    # Se chegou aqui, retorna o caminho padrão (que provavelmente não existe)
+    default_path = os.path.join(settings.BASE_DIR, 'firebase-credentials.json')
     logger.warning(f"Usando caminho padrão para credenciais do Firebase: {default_path}")
     return default_path
 

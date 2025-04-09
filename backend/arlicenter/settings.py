@@ -50,6 +50,14 @@ BLING_CLIENT_ID = os.environ.get("BLING_CLIENT_ID", "")
 BLING_CLIENT_SECRET = os.environ.get("BLING_CLIENT_SECRET", "")
 BLING_REDIRECT_URI = os.environ.get("BLING_REDIRECT_URI", "https://arlicenter-api.onrender.com/auth/callback/")
 
+# Configurações do Firebase
+FIREBASE_CREDENTIALS_PATH = os.environ.get("FIREBASE_CREDENTIALS_PATH", os.path.join(BASE_DIR, 'firebase-credentials.json'))
+# Se as credenciais do Firebase estão definidas como string JSON na variável de ambiente
+FIREBASE_CREDENTIALS_JSON = os.environ.get("FIREBASE_CREDENTIALS_JSON", "")
+# Diretório para armazenar credenciais
+CREDENTIALS_DIR = os.path.join(BASE_DIR, 'credentials')
+os.makedirs(CREDENTIALS_DIR, exist_ok=True)
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
