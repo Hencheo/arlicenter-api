@@ -183,7 +183,11 @@ LOGGING = {
 }
 
 # Configurações de CORS
-CORS_ALLOWED_ORIGINS = True
+CORS_ALLOWED_ORIGINS = ["http://localhost:8882"]
+
+# Defina apenas uma das configurações: ou CORS_ALLOWED_ORIGINS ou CORS_ALLOW_ALL_ORIGINS
+# Comentando a linha abaixo para evitar conflitos
+# CORS_ALLOW_ALL_ORIGINS = True
 
 # Permitir as requisições de credenciais (cookies, cabeçalhos HTTP autenticados)
 CORS_ALLOW_CREDENTIALS = True
