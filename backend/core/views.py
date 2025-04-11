@@ -386,6 +386,97 @@ def teste_busca_por_cpf(request):
     # Faz a requisição
     return bling_api_request(request, endpoint)
 
+def teste_busca_por_cpf_completo(request):
+    """
+    Endpoint para buscar contatos por CPF e suas contas a receber no Bling.
+    Implementa o fluxo completo similar ao script test_bling_api.py.
+    """
+    cpf = request.GET.get('cpf')
+    if not cpf:
+        return JsonResponse({"error": "É necessário fornecer um CPF"}, status=400)
+    
+    # Remove formatação do CPF, mantendo apenas os números
+    cpf = ''.join(filter(str.isdigit, cpf))
+    
+    try:
+        # Inicializa o TokenManager
+        token_manager = TokenManager()
+        
+        # Obtém o token ativo
+        token_data = token_manager.get_active_token()
+        
+        if not token_data:
+            return JsonResponse({"error": "Nenhum token ativo encontrado"}, status=401)
+        
+        # Obtém o access_token
+        access_token = token_data.get("access_token")
+        
+        if not access_token:
+            return JsonResponse({"error": "Token inválido"}, status=401)
+        
+        # Passo 1: Busca o contato pelo CPF
+        contatos_endpoint = f"contatos?numeroDocumento={cpf}"
+        base_url = "https://api.bling.com.br/Api/v3"
+        url_contatos = f"{base_url}/{contatos_endpoint.lstrip('/')}"
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        
+        logger.info(f"Realizando requisição para buscar contato por CPF: GET {url_contatos}")
+        response_contatos = requests.get(url_contatos, headers=headers)
+        
+        if response_contatos.status_code != 200:
+            return JsonResponse(response_contatos.json() if response_contatos.content else {"error": "Erro ao buscar contato"}, status=response_contatos.status_code)
+        
+        dados_contatos = response_contatos.json()
+        
+        # Verifica se encontrou algum contato
+        if not dados_contatos.get('data'):
+            return JsonResponse({"data": [], "contas_a_receber": []}, status=200)
+        
+        # Passo 2: Extrai o ID do contato
+        contato = dados_contatos['data'][0]
+        id_contato = contato['id']
+        
+        # Passo 3: Busca as contas a receber deste contato
+        # Filtra por situação 1 (Em aberto) por padrão
+        situacao = request.GET.get('situacao', '1')
+        contas_endpoint = f"contas/receber?idContato={id_contato}"
+        
+        # Adiciona filtro de situação se necessário
+        if situacao and situacao != '0':
+            contas_endpoint += f"&situacoes[]={situacao}"
+        
+        url_contas = f"{base_url}/{contas_endpoint.lstrip('/')}"
+        
+        logger.info(f"Realizando requisição para buscar contas a receber: GET {url_contas}")
+        response_contas = requests.get(url_contas, headers=headers)
+        
+        if response_contas.status_code != 200:
+            # Se falhar ao buscar contas, retorna ao menos os dados do contato
+            return JsonResponse({
+                "data": dados_contatos.get('data', []),
+                "contas_a_receber": [],
+                "error_contas": "Erro ao buscar contas a receber"
+            }, status=200)
+        
+        dados_contas = response_contas.json()
+        
+        # Passo 4: Monta o resultado completo
+        resultado_completo = {
+            "data": dados_contatos.get('data', []),
+            "contas_a_receber": dados_contas.get('data', [])
+        }
+        
+        return JsonResponse(resultado_completo, status=200)
+        
+    except Exception as e:
+        logger.error(f"Erro ao executar fluxo completo de busca por CPF: {str(e)}")
+        return JsonResponse({"error": f"Erro ao executar fluxo completo de busca por CPF: {str(e)}"}, status=500)
+
 def delete_all_tokens(request):
     """
     Exclui todos os tokens armazenados no Firestore.
