@@ -6,6 +6,7 @@ urlpatterns = [
     path('callback/', views.bling_callback, name='bling_callback'),
     path('api/token/', views.get_bling_token_info, name='get_bling_token_info'),
     path('api/tokens/delete-all/', views.delete_all_tokens, name='delete_all_tokens'),
+    path('api/auth/generate-url/', views.generate_authorization_url, name='generate_authorization_url'),
     path('api/produtos/', views.get_bling_produtos, name='get_bling_produtos'),
     path('api/pedidos/', views.get_bling_pedidos, name='get_bling_pedidos'),
     path('api/contatos/', views.get_bling_contatos, name='get_bling_contatos'),

@@ -412,3 +412,42 @@ def delete_all_tokens(request):
             "success": False,
             "error": f"Erro ao excluir tokens: {str(e)}"
         }, status=500)
+
+def generate_authorization_url(request):
+    """
+    Gera a URL de autorização para o Bling OAuth.
+    Endpoint: /api/auth/generate-url/
+    
+    Returns:
+        JsonResponse com a URL de autorização
+    """
+    try:
+        client_id = settings.BLING_CLIENT_ID
+        redirect_uri = settings.BLING_REDIRECT_URI
+        
+        if not client_id:
+            logger.error("Client ID do Bling não configurado")
+            return JsonResponse({
+                "success": False,
+                "error": "Client ID do Bling não configurado"
+            }, status=500)
+        
+        # Gera um state aleatório para segurança
+        import random
+        import string
+        state = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+        
+        # Constrói a URL de autorização
+        auth_url = f"https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id={client_id}&state={state}&redirect_uri={redirect_uri}"
+        
+        return JsonResponse({
+            "success": True,
+            "authorization_url": auth_url
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao gerar URL de autorização: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": f"Erro ao gerar URL de autorização: {str(e)}"
+        }, status=500)
