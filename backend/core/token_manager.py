@@ -119,6 +119,17 @@ class TokenManager:
             
             if not tokens:
                 logger.warning("Nenhum token ativo encontrado")
+                # Tenta recuperar algum token que tenha refresh_token
+                refresh_query = self.collection.order_by('created_at', direction=firestore.Query.DESCENDING).limit(1)
+                refresh_tokens = list(refresh_query.stream())
+                if refresh_tokens:
+                    token_doc = refresh_tokens[0]
+                    token_data = token_doc.to_dict()
+                    if 'refresh_token' in token_data:
+                        # Tenta renovar usando o refresh_token mais recente
+                        refresh_result = self.refresh_token(token_data.get('refresh_token'))
+                        if refresh_result:
+                            return refresh_result
                 return None
             
             # Obtém o primeiro token da lista
@@ -139,7 +150,7 @@ class TokenManager:
                 refresh_result = self.refresh_token(token_data.get('refresh_token'))
                 if refresh_result:
                     # Retorna o token atualizado
-                    return self.get_active_token()
+                    return refresh_result
             
             return token_data
             
@@ -165,7 +176,18 @@ class TokenManager:
                 return True
                 
             # Converte para datetime se for um timestamp do Firestore
-            if isinstance(created_at, firestore.SERVER_TIMESTAMP):
+            # O SERVER_TIMESTAMP é um sentinela e não um tipo, então verificamos de outra forma
+            if hasattr(created_at, 'seconds') and hasattr(created_at, 'nanos'):
+                # É um timestamp do Firestore
+                created_at = datetime.datetime.fromtimestamp(created_at.seconds + created_at.nanos/1e9)
+            elif isinstance(created_at, str):
+                # É uma string ISO (possivelmente de um fallback local)
+                try:
+                    created_at = datetime.datetime.fromisoformat(created_at)
+                except ValueError:
+                    created_at = datetime.datetime.now()
+            elif created_at is firestore.SERVER_TIMESTAMP:
+                # É o sentinela SERVER_TIMESTAMP (ainda não foi resolvido)
                 created_at = datetime.datetime.now()
             
             # Tempo de expiração em segundos
@@ -177,6 +199,7 @@ class TokenManager:
             
             # Verifica se está na hora de atualizar
             current_time = datetime.datetime.now()
+            logger.info(f"Token expira em {expiry_time}, hora de atualizar em {refresh_time}, hora atual {current_time}")
             return current_time >= refresh_time
             
         except Exception as e:
@@ -184,21 +207,30 @@ class TokenManager:
             # Em caso de erro, é mais seguro dizer que sim
             return True
     
-    def refresh_token(self, refresh_token):
+    def refresh_token(self, refresh_token=None):
         """
         Atualiza o token usando o refresh_token
         
         Args:
-            refresh_token (str): Token de atualização
+            refresh_token (str, optional): Token de atualização. Se não for fornecido,
+                                          tentará obter do token ativo atual.
             
         Returns:
-            bool: True se o token foi atualizado com sucesso, False caso contrário
+            dict: Dados do novo token ou None se a renovação falhou
         """
         try:
+            # Se não forneceu refresh_token, tenta obter do token ativo
+            if not refresh_token:
+                # Busca o token ativo mais recente
+                active_token = self.get_active_token()
+                if active_token and 'refresh_token' in active_token:
+                    refresh_token = active_token.get('refresh_token')
+                    logger.info(f"Usando refresh_token do token ativo.")
+            
             # Verifica se temos um refresh_token
             if not refresh_token:
                 logger.error("Impossível renovar token: refresh_token não fornecido")
-                return False
+                return None
             
             # Obtém as credenciais do cliente
             client_id = settings.BLING_CLIENT_ID
@@ -206,7 +238,7 @@ class TokenManager:
             
             if not client_id or not client_secret:
                 logger.error("Credenciais do Bling não configuradas")
-                return False
+                return None
             
             # Configura a requisição
             url = "https://api.bling.com.br/Api/v3/oauth/token"
@@ -235,20 +267,32 @@ class TokenManager:
             # Verifica se a requisição foi bem-sucedida
             if response.status_code != 200:
                 logger.error(f"Erro ao renovar token: {response.status_code} - {response.text}")
-                return False
+                
+                # Se o refresh token expirou, precisamos obter um novo token completo
+                # Isso exigiria uma nova autorização do usuário
+                if "invalid_grant" in response.text:
+                    logger.warning("Refresh token expirado ou inválido. É necessário uma nova autorização.")
+                    # Desativa todos os tokens pois estão obsoletos
+                    self._deactivate_active_tokens()
+                
+                return None
             
             # Obtém os dados do novo token
-            token_data = response.json()
+            new_token_data = response.json()
             
             # Salva o novo token
-            self.create_token_document(token_data)
+            token_id = self.create_token_document(new_token_data)
             
-            logger.info("Token renovado com sucesso")
-            return True
+            if token_id:
+                logger.info(f"Token renovado com sucesso. Novo ID: {token_id}")
+                return new_token_data
+            else:
+                logger.error("Falha ao salvar o novo token no Firestore")
+                return None
             
         except Exception as e:
             logger.error(f"Erro ao renovar token: {str(e)}")
-            return False
+            return None
     
     def _save_token_locally(self, token_data):
         """
