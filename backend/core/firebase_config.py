@@ -147,4 +147,4 @@ def initialize_firebase():
             return mock_db
         except ImportError:
             # Se não conseguir importar mock, repassamos a exceção
-            raise 
+            raise

@@ -1,1 +1,1 @@
-web: gunicorn arlicenter.wsgi:application 
+web: gunicorn arlicenter.wsgi

@@ -27,6 +27,24 @@ except ImportError as e:
             logging.error("Método get_active_token chamado, mas TokenManager não está disponível.")
             return None
 
+# Importa o gerenciador de usuários
+try:
+    from core.user_manager import UserManager
+except ImportError as e:
+    logging.error(f"Erro ao importar UserManager: {e}")
+    # Classe temporária para evitar falhas completas caso a importação falhe
+    class UserManager:
+        def __init__(self):
+            logging.error("UserManager não pôde ser carregado corretamente.")
+            
+        def get_user_by_cpf(self, cpf):
+            logging.error("Método get_user_by_cpf chamado, mas UserManager não está disponível.")
+            return None
+            
+        def verify_password(self, cpf, senha):
+            logging.error("Método verify_password chamado, mas UserManager não está disponível.")
+            return False
+
 # Configurar logger
 logger = logging.getLogger(__name__)
 
@@ -198,9 +216,12 @@ def bling_api_request(request, endpoint, method="GET"):
     Realiza uma requisição para a API do Bling utilizando o token ativo.
     
     Args:
-        request: Requisição HTTP
+        request: Objeto de requisição do Django
         endpoint: Endpoint da API do Bling (sem a URL base)
-        method: Método HTTP (GET, POST, PUT, DELETE)
+        method: Método HTTP (GET, POST, etc)
+    
+    Returns:
+        JsonResponse com os dados da API ou mensagem de erro
     """
     try:
         # Inicializa o TokenManager
@@ -209,125 +230,158 @@ def bling_api_request(request, endpoint, method="GET"):
         # Obtém o token ativo
         token_data = token_manager.get_active_token()
         
-        if not token_data or "access_token" not in token_data:
-            return JsonResponse({"error": "Token não disponível"}, status=401)
+        if not token_data:
+            return JsonResponse({"error": "Nenhum token ativo encontrado"}, status=401)
         
-        # Monta a URL da API
-        base_url = "https://www.bling.com.br/Api/v3"
+        # Obtém o access_token
+        access_token = token_data.get("access_token")
+        
+        if not access_token:
+            return JsonResponse({"error": "Token inválido"}, status=401)
+        
+        # Formato correto da URL base da API do Bling V3 
+        base_url = "https://api.bling.com.br/Api/v3"
         url = f"{base_url}/{endpoint.lstrip('/')}"
         
-        # Prepara os headers
+        # Cabeçalhos para a requisição
         headers = {
-            "Authorization": f"Bearer {token_data['access_token']}",
+            "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
             "Content-Type": "application/json"
         }
         
-        # Dados da requisição (para POST, PUT)
-        data = request.body.decode('utf-8') if request.body else None
-        
-        # Log da requisição
-        logger.info(f"Realizando requisição {method} para {url}")
-        
         # Realiza a requisição
-        if method == "GET":
-            response = requests.get(url, headers=headers, params=request.GET.dict())
-        elif method == "POST":
-            response = requests.post(url, headers=headers, data=data)
-        elif method == "PUT":
-            response = requests.put(url, headers=headers, data=data)
-        elif method == "DELETE":
+        logger.info(f"Realizando requisição para a API do Bling: {method} {url}")
+        response = None
+        
+        if method.upper() == "GET":
+            response = requests.get(url, headers=headers)
+        elif method.upper() == "POST":
+            response = requests.post(url, headers=headers, json=json.loads(request.body) if request.body else {})
+        elif method.upper() == "PUT":
+            response = requests.put(url, headers=headers, json=json.loads(request.body) if request.body else {})
+        elif method.upper() == "DELETE":
             response = requests.delete(url, headers=headers)
         else:
             return JsonResponse({"error": f"Método HTTP não suportado: {method}"}, status=400)
         
-        # Log da resposta
-        logger.info(f"Resposta da API do Bling: {response.status_code}")
+        # Verifica se o token expirou
+        if response.status_code == 401 and "invalid_token" in response.text:
+            logger.warning("Token expirado ou inválido. Tentando renovar...")
+            
+            # Tenta renovar o token
+            token_refreshed = token_manager.refresh_token(token_data.get("refresh_token"))
+            
+            # Se o token foi renovado com sucesso, tenta a requisição novamente
+            if token_refreshed:
+                # Obtém o novo token
+                new_token_data = token_manager.get_active_token()
+                new_access_token = new_token_data.get("access_token")
+                
+                # Atualiza o cabeçalho com o novo token
+                headers["Authorization"] = f"Bearer {new_access_token}"
+                
+                # Tenta a requisição novamente
+                logger.info(f"Tentando novamente com token renovado: {method} {url}")
+                
+                if method.upper() == "GET":
+                    response = requests.get(url, headers=headers)
+                elif method.upper() == "POST":
+                    response = requests.post(url, headers=headers, json=json.loads(request.body) if request.body else {})
+                elif method.upper() == "PUT":
+                    response = requests.put(url, headers=headers, json=json.loads(request.body) if request.body else {})
+                elif method.upper() == "DELETE":
+                    response = requests.delete(url, headers=headers)
+            else:
+                return JsonResponse({"error": "Falha ao renovar token expirado"}, status=401)
         
-        # Tenta converter para JSON
-        try:
-            response_data = response.json()
-        except ValueError:
-            response_data = {"text": response.text}
-        
-        # Retorna a resposta
-        return JsonResponse(response_data, status=response.status_code, safe=False)
+        # Retorna os dados da API
+        return JsonResponse(response.json() if response.content else {}, status=response.status_code)
         
     except Exception as e:
         logger.error(f"Erro ao realizar requisição para a API do Bling: {str(e)}")
         return JsonResponse({"error": f"Erro ao realizar requisição para a API do Bling: {str(e)}"}, status=500)
 
 def get_bling_produtos(request):
-    """
-    Obtém a lista de produtos do Bling.
-    Endpoint: /api/produtos/
-    """
-    return bling_api_request(request, "produtos", "GET")
+    """Endpoint para obter produtos do Bling."""
+    return bling_api_request(request, "produtos")
 
 def get_bling_pedidos(request):
-    """
-    Obtém a lista de pedidos do Bling.
-    Endpoint: /api/pedidos/
-    """
-    return bling_api_request(request, "pedidos", "GET")
+    """Endpoint para obter pedidos do Bling."""
+    return bling_api_request(request, "pedidos")
 
 def get_bling_contatos(request):
-    """
-    Obtém a lista de contatos do Bling.
-    Endpoint: /api/contatos/
-    """
-    return bling_api_request(request, "contatos", "GET")
+    """Endpoint para obter contatos do Bling."""
+    return bling_api_request(request, "contatos")
 
-# Função de teste para buscar contato por CPF e suas contas a receber
+def user_login(request):
+    """
+    Endpoint para autenticação de usuários por CPF e senha
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Método não permitido"}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        cpf = data.get("cpf")
+        senha = data.get("senha")
+        
+        if not cpf or not senha:
+            return JsonResponse({"error": "CPF e senha são obrigatórios"}, status=400)
+        
+        # Remove formatação do CPF, mantendo apenas os números
+        cpf = ''.join(filter(str.isdigit, cpf))
+        
+        # Inicializa o UserManager
+        user_manager = UserManager()
+        
+        # Verifica se a senha está correta
+        if user_manager.verify_password(cpf, senha):
+            # Obtém os dados do usuário
+            user_data = user_manager.get_user_by_cpf(cpf)
+            
+            if not user_data:
+                return JsonResponse({"error": "Erro ao obter dados do usuário"}, status=500)
+            
+            # Remove dados sensíveis
+            safe_user_data = {
+                "cpf": user_data.get("cpf"),
+                "nome": user_data.get("nome"),
+                "email": user_data.get("email"),
+                "telefone": user_data.get("telefone"),
+                "status": user_data.get("status"),
+                "perfil": user_data.get("perfil"),
+                "id_contato_bling": user_data.get("id_contato_bling")
+            }
+            
+            return JsonResponse({
+                "success": True,
+                "message": "Login realizado com sucesso",
+                "user": safe_user_data
+            })
+        else:
+            return JsonResponse({
+                "success": False,
+                "error": "CPF ou senha incorretos"
+            }, status=401)
+            
+    except Exception as e:
+        logger.error(f"Erro ao processar login: {str(e)}")
+        return JsonResponse({"error": f"Erro ao processar login: {str(e)}"}, status=500)
+
 def teste_busca_por_cpf(request):
     """
-    Testa a busca de contato por CPF e depois busca as contas a receber deste contato.
-    Endpoint: /api/teste/cpf/?cpf=NUMERO_CPF
+    Endpoint para testar a busca de contatos por CPF no Bling
     """
-    try:
-        # Obtém o CPF da requisição
-        cpf = request.GET.get('cpf')
-        if not cpf:
-            return JsonResponse({"error": "CPF não fornecido"}, status=400)
-        
-        logger.info(f"Testando busca por CPF: {cpf}")
-        
-        # 1. Busca o contato pelo CPF
-        contatos_response = bling_api_request(request, f"contatos?numeroDocumento={cpf}", "GET")
-        
-        # Se a resposta não for um JsonResponse, retorna ela diretamente
-        if not isinstance(contatos_response, JsonResponse):
-            return contatos_response
-        
-        # Converte a resposta para dicionário Python
-        contatos_data = json.loads(contatos_response.content)
-        
-        # Verifica se encontrou contatos
-        if not contatos_data or not contatos_data.get('data'):
-            return JsonResponse({"error": "Nenhum contato encontrado com este CPF"}, status=404)
-        
-        # Extrai o ID do primeiro contato encontrado
-        contato_id = contatos_data['data'][0]['id']
-        logger.info(f"Contato encontrado com ID: {contato_id}")
-        
-        # 2. Busca as contas a receber deste contato
-        contas_response = bling_api_request(request, f"contas/receber?idContato={contato_id}", "GET")
-        
-        # Se a resposta não for um JsonResponse, retorna ela diretamente
-        if not isinstance(contas_response, JsonResponse):
-            return contas_response
-        
-        # Converte a resposta para dicionário Python
-        contas_data = json.loads(contas_response.content)
-        
-        # Monta a resposta com os dados do contato e suas contas
-        resultado = {
-            "contato": contatos_data['data'][0],
-            "contas_a_receber": contas_data.get('data', [])
-        }
-        
-        return JsonResponse(resultado)
-        
-    except Exception as e:
-        logger.error(f"Erro ao testar busca por CPF: {str(e)}")
-        return JsonResponse({"error": f"Erro ao testar busca por CPF: {str(e)}"}, status=500)
+    cpf = request.GET.get('cpf')
+    if not cpf:
+        return JsonResponse({"error": "É necessário fornecer um CPF"}, status=400)
+    
+    # Remove formatação do CPF, mantendo apenas os números
+    cpf = ''.join(filter(str.isdigit, cpf))
+    
+    # Monta a URL da API com o filtro por CPF
+    endpoint = f"contatos?numeroDocumento={cpf}"
+    
+    # Faz a requisição
+    return bling_api_request(request, endpoint)
