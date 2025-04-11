@@ -26,6 +26,8 @@ import os
 from django.conf import settings
 import json
 from pathlib import Path
+import requests
+import base64
 
 # Configurar logger
 logger = logging.getLogger(__name__)
@@ -134,7 +136,10 @@ class TokenManager:
             # Verifica se o token precisa ser atualizado
             if self.should_refresh_token(token_data):
                 logger.info("Token precisa ser atualizado. Iniciando refresh...")
-                return self.refresh_token(token_data)
+                refresh_result = self.refresh_token(token_data.get('refresh_token'))
+                if refresh_result:
+                    # Retorna o token atualizado
+                    return self.get_active_token()
             
             return token_data
             
@@ -179,227 +184,261 @@ class TokenManager:
             # Em caso de erro, é mais seguro dizer que sim
             return True
     
-    def refresh_token(self, token_data):
+    def refresh_token(self, refresh_token):
         """
         Atualiza o token usando o refresh_token
         
         Args:
-            token_data (dict): Dados do token antigo
+            refresh_token (str): Token de atualização
             
         Returns:
-            dict: Dados do novo token ou None se falhar
+            bool: True se o token foi atualizado com sucesso, False caso contrário
         """
         try:
-            # Implementar lógica de refresh do token
-            # Esta é uma função placeholder - você precisará implementar a chamada 
-            # à API do Bling para atualizar o token usando o refresh_token
+            # Verifica se temos um refresh_token
+            if not refresh_token:
+                logger.error("Impossível renovar token: refresh_token não fornecido")
+                return False
             
-            # TODO: Implementar chamada de refresh do token
+            # Obtém as credenciais do cliente
+            client_id = settings.BLING_CLIENT_ID
+            client_secret = settings.BLING_CLIENT_SECRET
             
-            logger.error("Função de refresh do token não implementada")
-            return token_data  # Por enquanto, retorna o token original
+            if not client_id or not client_secret:
+                logger.error("Credenciais do Bling não configuradas")
+                return False
+            
+            # Configura a requisição
+            url = "https://api.bling.com.br/Api/v3/oauth/token"
+            
+            # Cria o cabeçalho de autenticação
+            auth_str = f"{client_id}:{client_secret}"
+            auth_bytes = auth_str.encode('ascii')
+            auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
+            
+            headers = {
+                "Authorization": f"Basic {auth_b64}",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json"
+            }
+            
+            # Dados do corpo da requisição
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token
+            }
+            
+            # Realiza a requisição
+            logger.info(f"Realizando requisição de renovação de token")
+            response = requests.post(url, data=data, headers=headers)
+            
+            # Verifica se a requisição foi bem-sucedida
+            if response.status_code != 200:
+                logger.error(f"Erro ao renovar token: {response.status_code} - {response.text}")
+                return False
+            
+            # Obtém os dados do novo token
+            token_data = response.json()
+            
+            # Salva o novo token
+            self.create_token_document(token_data)
+            
+            logger.info("Token renovado com sucesso")
+            return True
             
         except Exception as e:
-            logger.error(f"Erro ao atualizar token: {str(e)}")
-            return token_data  # Retorna o token original em caso de erro
+            logger.error(f"Erro ao renovar token: {str(e)}")
+            return False
     
     def _save_token_locally(self, token_data):
         """
-        Salva o token localmente como fallback
+        Salva o token em um arquivo local como fallback
         
         Args:
             token_data (dict): Dados do token
         """
         try:
-            # Cria o diretório se não existir
-            tokens_dir = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bling_tokens'))
-            tokens_dir.mkdir(exist_ok=True)
+            # Define o diretório para salvar os tokens
+            try:
+                tokens_dir = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bling_tokens'))
+                tokens_dir.mkdir(exist_ok=True)
+            except Exception as dir_error:
+                logger.warning(f"Não foi possível criar o diretório bling_tokens: {str(dir_error)}")
+                tokens_dir = Path(os.path.join('/tmp', 'bling_tokens'))
+                tokens_dir.mkdir(exist_ok=True)
             
-            # Cria um nome de arquivo com timestamp
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"token_{timestamp}.json"
-            filepath = tokens_dir / filename
+            # Define o nome do arquivo baseado na data/hora atual
+            filename = tokens_dir / f"token_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             
-            # Salva o token como JSON
-            with open(filepath, 'w') as f:
-                json.dump(token_data, f, indent=2)
-                
-            logger.info(f"Token salvo localmente como fallback: {filepath}")
+            # Adiciona metadados ao token
+            token_data_with_metadata = {
+                **token_data,
+                'created_at': datetime.datetime.now().isoformat(),
+                'last_used': datetime.datetime.now().isoformat(),
+                'active': True
+            }
+            
+            # Salva o token no arquivo
+            with open(filename, 'w') as f:
+                json.dump(token_data_with_metadata, f, indent=4)
+            
+            # Salva também um arquivo com nome fixo para facilitar recuperação
+            active_filename = tokens_dir / "token_active.json"
+            with open(active_filename, 'w') as f:
+                json.dump(token_data_with_metadata, f, indent=4)
+            
+            logger.info(f"Token salvo localmente em {filename}")
             
         except Exception as e:
             logger.error(f"Erro ao salvar token localmente: {str(e)}")
-            # Tenta salvar em /tmp como último recurso
-            try:
-                tmp_dir = Path('/tmp/bling_tokens')
-                tmp_dir.mkdir(exist_ok=True, parents=True)
-                
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"token_{timestamp}.json"
-                filepath = tmp_dir / filename
-                
-                with open(filepath, 'w') as f:
-                    json.dump(token_data, f, indent=2)
-                    
-                logger.info(f"Token salvo em diretório temporário: {filepath}")
-            except Exception as inner_e:
-                logger.critical(f"Falha em todas as tentativas de salvar o token: {str(inner_e)}")
     
     def _get_local_token(self):
         """
-        Obtém o token mais recente salvo localmente
+        Obtém o token salvo localmente como fallback
         
         Returns:
             dict: Dados do token ou None se não encontrado
         """
         try:
-            # Diretórios para procurar tokens
-            tokens_dirs = [
-                Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bling_tokens')),
-                Path('/tmp/bling_tokens')
-            ]
-            
-            latest_file = None
-            latest_time = datetime.datetime.min
-            
-            # Procura em ambos os diretórios
-            for tokens_dir in tokens_dirs:
+            # Define o diretório dos tokens
+            tokens_dir = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bling_tokens'))
+            if not tokens_dir.exists():
+                tokens_dir = Path(os.path.join('/tmp', 'bling_tokens'))
                 if not tokens_dir.exists():
-                    continue
-                    
-                # Lista todos os arquivos JSON no diretório
-                for file in tokens_dir.glob('token_*.json'):
-                    file_time = datetime.datetime.fromtimestamp(file.stat().st_mtime)
-                    if file_time > latest_time:
-                        latest_time = file_time
-                        latest_file = file
+                    logger.warning("Diretório de tokens não encontrado")
+                    return None
             
-            # Se encontrou um arquivo, lê o conteúdo
-            if latest_file:
-                with open(latest_file, 'r') as f:
+            # Tenta ler o arquivo fixo primeiro
+            active_filename = tokens_dir / "token_active.json"
+            if active_filename.exists():
+                with open(active_filename, 'r') as f:
                     token_data = json.load(f)
-                    logger.info(f"Token obtido localmente: {latest_file}")
-                    return token_data
+                logger.info("Token recuperado do arquivo local fixo")
+                return token_data
             
-            logger.warning("Nenhum token local encontrado")
-            return None
+            # Se não encontrar, busca o arquivo mais recente
+            token_files = list(tokens_dir.glob("token_*.json"))
+            if not token_files:
+                logger.warning("Nenhum arquivo de token encontrado")
+                return None
+            
+            # Ordena por data de modificação (mais recente primeiro)
+            token_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            
+            # Lê o arquivo mais recente
+            with open(token_files[0], 'r') as f:
+                token_data = json.load(f)
+            
+            logger.info(f"Token recuperado do arquivo local: {token_files[0]}")
+            return token_data
             
         except Exception as e:
             logger.error(f"Erro ao obter token local: {str(e)}")
             return None
-
+    
     def create_token_collection(self):
         """
-        Cria a coleção de tokens no Firestore se ela não existir.
-        No Firestore, as coleções são criadas implicitamente quando documentos são adicionados,
-        então esta função serve principalmente para verificar a conexão e registrar a operação.
+        Cria a coleção de tokens no Firestore
+        
+        Returns:
+            bool: True se a coleção foi criada com sucesso, False caso contrário
         """
         try:
-            # Criamos um documento temporário para verificar se a coleção pode ser acessada
-            temp_doc = self.collection.document('_temp_initialization')
-            temp_doc.set({
-                'created_at': firestore.SERVER_TIMESTAMP,
-                'description': 'Documento temporário para inicialização da coleção'
-            })
-            
-            # Deletamos o documento temporário
+            # Verifica se a coleção existe criando um documento temporário
+            temp_doc = self.collection.document('_temp')
+            temp_doc.set({'init': True})
             temp_doc.delete()
             
-            logger.info(f"Coleção '{BLING_TOKENS_COLLECTION}' inicializada com sucesso.")
-            return True
-        except Exception as e:
-            logger.error(f"Erro ao inicializar coleção '{BLING_TOKENS_COLLECTION}': {str(e)}")
-            return False
+            # Define a estrutura padrão da coleção
+            self.define_token_structure()
             
+            # Cria índices
+            self.create_firestore_indexes()
+            
+            logger.info(f"Coleção '{BLING_TOKENS_COLLECTION}' inicializada com sucesso")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Erro ao criar coleção '{BLING_TOKENS_COLLECTION}': {str(e)}")
+            return False
+    
     def define_token_structure(self):
         """
-        Define a estrutura do documento para armazenar tokens.
-        Esta função é informativa e retorna a estrutura de dados esperada.
-        """
-        # No Firestore, não precisamos definir um esquema antecipadamente,
-        # mas é útil documentar a estrutura esperada
-        token_structure = {
-            'access_token': 'string - Token de acesso',
-            'refresh_token': 'string - Token de atualização',
-            'expires_in': 'number - Tempo de expiração em segundos',
-            'expires_at': 'timestamp - Data/hora de expiração (calculada)',
-            'created_at': 'timestamp - Data/hora de criação',
-            'updated_at': 'timestamp - Data/hora da última atualização',
-            'is_active': 'boolean - Indica se é o token ativo atual',
-            'token_type': 'string - Tipo de token (ex: "bearer")',
-            'scope': 'string - Escopo do token'
-        }
-        
-        logger.info(f"Estrutura de documento definida para '{BLING_TOKENS_COLLECTION}'")
-        return token_structure
-        
-    def update_token(self, token_data, refresh_token=None):
-        """
-        Atualiza o token usando o refresh_token.
-        
-        Args:
-            token_data (dict): Novos dados do token.
-            refresh_token (str, optional): Token de atualização. Se não fornecido, usa o do token ativo.
-            
-        Returns:
-            bool: True se o token foi atualizado com sucesso, False caso contrário.
+        Define a estrutura padrão de um documento de token
         """
         try:
-            # Desativa tokens ativos anteriores
-            self._deactivate_active_tokens()
-            
-            # Adiciona metadados ao token
-            token_with_metadata = token_data.copy()
-            token_with_metadata.update({
+            # Cria um documento de exemplo com a estrutura esperada
+            token_structure = {
+                'access_token': '',
+                'token_type': 'bearer',
+                'expires_in': 3600,
+                'refresh_token': '',
+                'scope': '',
                 'created_at': firestore.SERVER_TIMESTAMP,
-                'is_active': True,
                 'last_used': firestore.SERVER_TIMESTAMP,
-                'refreshed_from': refresh_token
-            })
+                'active': False
+            }
             
-            # Adiciona o novo token ao Firestore
-            doc_ref = self.collection.add(token_with_metadata)
+            # Adiciona o documento de estrutura
+            structure_doc = self.collection.document('_structure')
+            structure_doc.set(token_structure)
             
-            logger.info(f"Token atualizado com sucesso. Novo ID: {doc_ref[1].id}")
+            logger.info(f"Estrutura da coleção '{BLING_TOKENS_COLLECTION}' definida com sucesso")
+            
+        except Exception as e:
+            logger.error(f"Erro ao definir estrutura da coleção: {str(e)}")
+    
+    def update_token(self, token_data, refresh_token=None):
+        """
+        Atualiza um token existente
+        
+        Args:
+            token_data (dict): Dados do token
+            refresh_token (str): Token de atualização (opcional)
+            
+        Returns:
+            bool: True se o token foi atualizado com sucesso, False caso contrário
+        """
+        try:
+            # Busca os tokens ativos
+            query = self.collection.where('active', '==', True).limit(1)
+            tokens = list(query.stream())
+            
+            if not tokens:
+                logger.warning("Nenhum token ativo encontrado para atualização")
+                # Se não encontrar tokens ativos, cria um novo
+                if refresh_token:
+                    return self.refresh_token(refresh_token)
+                else:
+                    return self.create_token_document(token_data)
+            
+            # Obtém o token ativo
+            token_doc = tokens[0]
+            token_id = token_doc.id
+            
+            # Atualiza o token
+            token_data['last_used'] = firestore.SERVER_TIMESTAMP
+            self.collection.document(token_id).update(token_data)
+            
+            logger.info(f"Token atualizado com sucesso. ID: {token_id}")
             return True
             
         except Exception as e:
             logger.error(f"Erro ao atualizar token: {str(e)}")
             return False
-
+    
     def create_firestore_indexes(self):
         """
-        Cria índices necessários para consultas eficientes.
-        No Firestore, os índices compostos precisam ser criados manualmente
-        no console do Firebase, mas esta função documenta quais índices são necessários.
+        Cria índices no Firestore para otimizar consultas frequentes
         
         Returns:
-            dict: Descrição dos índices recomendados
+            bool: True se os índices foram criados com sucesso, False caso contrário
         """
-        # No Firestore, os índices simples são criados automaticamente
-        # e os compostos precisam ser criados no console do Firebase
-        recommended_indexes = {
-            "single_field": [
-                {"field": "is_active", "order": "ASCENDING"},
-                {"field": "created_at", "order": "DESCENDING"},
-                {"field": "expires_at", "order": "ASCENDING"}
-            ],
-            "composite": [
-                {
-                    "name": "active_tokens_by_expiration",
-                    "fields": [
-                        {"field": "is_active", "order": "ASCENDING"},
-                        {"field": "expires_at", "order": "ASCENDING"}
-                    ]
-                },
-                {
-                    "name": "tokens_by_creation_date",
-                    "fields": [
-                        {"field": "is_active", "order": "ASCENDING"},
-                        {"field": "created_at", "order": "DESCENDING"}
-                    ]
-                }
-            ]
-        }
+        # Este método é apenas para documentação, pois a criação de índices
+        # é geralmente feita através do console do Firebase ou de regras específicas
+        # No ambiente real, os índices necessários são:
+        # - active (ascendente) + created_at (descendente)
+        logger.info("Índices para o Firestore devem ser criados manualmente no console do Firebase")
+        logger.info("- Índice em 'active' (ascendente) + 'created_at' (descendente)")
         
-        logger.info("Índices recomendados para a coleção de tokens documentados")
-        return recommended_indexes 
+        return True
