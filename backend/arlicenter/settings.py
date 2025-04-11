@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "core",
 ]
 
@@ -61,6 +62,7 @@ os.makedirs(CREDENTIALS_DIR, exist_ok=True)
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -179,3 +181,31 @@ LOGGING = {
         },
     },
 }
+
+# Configurações de CORS
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8082",
+    "http://localhost:3000",
+    "http://localhost:19006",
+    "http://127.0.0.1:8082",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:19006",
+    "http://localhost",
+    "https://arlicenter-app.onrender.com",
+]
+
+# Permitir as requisições de credenciais (cookies, cabeçalhos HTTP autenticados)
+CORS_ALLOW_CREDENTIALS = True
+
+# Cabeçalhos que o cliente pode usar
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
