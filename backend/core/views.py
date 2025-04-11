@@ -385,3 +385,30 @@ def teste_busca_por_cpf(request):
     
     # Faz a requisição
     return bling_api_request(request, endpoint)
+
+def delete_all_tokens(request):
+    """
+    Exclui todos os tokens armazenados no Firestore.
+    Endpoint: /api/tokens/delete-all/
+    
+    Retorna:
+        JsonResponse com o número de tokens excluídos ou mensagem de erro
+    """
+    try:
+        # Inicializa o TokenManager
+        token_manager = TokenManager()
+        
+        # Exclui todos os tokens
+        deleted_count = token_manager.delete_all_tokens()
+        
+        return JsonResponse({
+            "success": True,
+            "message": f"{deleted_count} tokens foram excluídos com sucesso."
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao excluir tokens: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": f"Erro ao excluir tokens: {str(e)}"
+        }, status=500)

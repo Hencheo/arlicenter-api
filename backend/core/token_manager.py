@@ -198,7 +198,17 @@ class TokenManager:
             refresh_time = expiry_time - datetime.timedelta(minutes=10)
             
             # Verifica se está na hora de atualizar
-            current_time = datetime.datetime.now()
+            # Usando timezone.now() para garantir que é timezone-aware, como o timestamp do Firestore
+            current_time = timezone.now()
+            
+            # Convertendo todas as datas para o mesmo formato (com timezone)
+            if timezone.is_naive(created_at):
+                created_at = timezone.make_aware(created_at)
+            if timezone.is_naive(expiry_time):
+                expiry_time = timezone.make_aware(expiry_time)
+            if timezone.is_naive(refresh_time):
+                refresh_time = timezone.make_aware(refresh_time)
+            
             logger.info(f"Token expira em {expiry_time}, hora de atualizar em {refresh_time}, hora atual {current_time}")
             return current_time >= refresh_time
             
@@ -486,3 +496,32 @@ class TokenManager:
         logger.info("- Índice em 'active' (ascendente) + 'created_at' (descendente)")
         
         return True
+    
+    def delete_all_tokens(self):
+        """
+        Exclui todos os tokens da coleção no Firestore.
+        
+        Returns:
+            int: Número de tokens excluídos
+        """
+        try:
+            # Busca todos os tokens
+            all_tokens = self.collection.stream()
+            
+            # Cria um batch para as operações de exclusão
+            batch = self.db.batch()
+            
+            count = 0
+            for token in all_tokens:
+                token_ref = self.collection.document(token.id)
+                batch.delete(token_ref)
+                count += 1
+            
+            # Executa o batch
+            batch.commit()
+            logger.info(f"{count} tokens foram excluídos com sucesso.")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Erro ao excluir tokens: {str(e)}")
+            return 0
