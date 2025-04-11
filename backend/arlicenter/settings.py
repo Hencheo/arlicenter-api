@@ -183,16 +183,7 @@ LOGGING = {
 }
 
 # Configurações de CORS
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8082",
-    "http://localhost:3000",
-    "http://localhost:19006",
-    "http://127.0.0.1:8082",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:19006",
-    "http://localhost",
-    "https://arlicenter-app.onrender.com",
-]
+CORS_ALLOWED_ORIGINS = True
 
 # Permitir as requisições de credenciais (cookies, cabeçalhos HTTP autenticados)
 CORS_ALLOW_CREDENTIALS = True
