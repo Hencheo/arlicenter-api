@@ -5,6 +5,7 @@ urlpatterns = [
     path('', views.index, name='index'),
     path('callback/', views.bling_callback, name='bling_callback'),
     path('api/token/', views.get_bling_token_info, name='get_bling_token_info'),
+    path('api/token/status/', views.check_token_status, name='check_token_status'),
     path('api/tokens/delete-all/', views.delete_all_tokens, name='delete_all_tokens'),
     path('api/auth/generate-url/', views.generate_authorization_url, name='generate_authorization_url'),
     path('generate-auth-url/', views.generate_authorization_url, name='simple_generate_url'),

@@ -193,23 +193,101 @@ def get_bling_token_info(request):
         token_data = token_manager.get_active_token()
         
         if not token_data:
-            return JsonResponse({"error": "Nenhum token ativo encontrado"}, status=404)
+            return JsonResponse({
+                "status": "error",
+                "error": "Nenhum token ativo encontrado",
+                "auth_required": True,
+                "authorization_url": generate_authorization_url(request, return_url_only=True)
+            }, status=404)
+        
+        # Verifica a validade do token
+        token_valid = True
+        if token_data.get("access_token"):
+            token_valid = verify_token_validity(token_data.get("access_token"))
         
         # Retorna o token com informações básicas (sem expor access_token completo)
         safe_token_data = {
+            "status": "success" if token_valid else "invalid",
             "token_type": token_data.get("token_type"),
             "expires_in": token_data.get("expires_in"),
             "scope": token_data.get("scope"),
             "access_token_prefix": token_data.get("access_token", "")[:10] + "..." if token_data.get("access_token") else None,
             "created_at": token_data.get("created_at"),
             "active": token_data.get("active", True),
+            "valid": token_valid
         }
+        
+        # Se o token for inválido, adiciona URL de autorização
+        if not token_valid:
+            safe_token_data["auth_required"] = True
+            safe_token_data["authorization_url"] = generate_authorization_url(request, return_url_only=True)
         
         return JsonResponse(safe_token_data)
         
     except Exception as e:
         logger.error(f"Erro ao obter informações do token: {str(e)}")
         return JsonResponse({"error": f"Erro ao obter informações do token: {str(e)}"}, status=500)
+
+def check_token_status(request):
+    """
+    Verifica o status do token ativo do Bling.
+    Endpoint: /api/token/status/
+    """
+    try:
+        # Inicializa o TokenManager
+        token_manager = TokenManager()
+        
+        # Obtém o token ativo
+        token_data = token_manager.get_active_token()
+        
+        if not token_data:
+            return JsonResponse({
+                "status": "not_found",
+                "valid": False,
+                "auth_required": True,
+                "authorization_url": generate_authorization_url(request, return_url_only=True)
+            })
+        
+        # Verifica a validade do token
+        token_valid = True
+        if token_data.get("access_token"):
+            token_valid = verify_token_validity(token_data.get("access_token"))
+        
+        # Se o token não for válido, tenta renovar
+        if not token_valid:
+            # Tenta renovar o token
+            refresh_token = token_data.get("refresh_token")
+            token_refreshed = token_manager.refresh_token(refresh_token)
+            
+            if token_refreshed:
+                return JsonResponse({
+                    "status": "renewed",
+                    "valid": True,
+                    "message": "Token foi renovado automaticamente"
+                })
+            else:
+                return JsonResponse({
+                    "status": "invalid",
+                    "valid": False,
+                    "auth_required": True,
+                    "message": "Token inválido e não foi possível renová-lo automaticamente",
+                    "authorization_url": generate_authorization_url(request, return_url_only=True)
+                })
+        
+        # Se chegou aqui, o token é válido
+        return JsonResponse({
+            "status": "valid",
+            "valid": True,
+            "message": "Token ativo e válido"
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao verificar status do token: {str(e)}")
+        return JsonResponse({
+            "status": "error",
+            "valid": False,
+            "error": f"Erro ao verificar status do token: {str(e)}"
+        }, status=500)
 
 def bling_api_request(request, endpoint, method="GET"):
     """
@@ -239,6 +317,26 @@ def bling_api_request(request, endpoint, method="GET"):
         if not access_token:
             return JsonResponse({"error": "Token inválido"}, status=401)
         
+        # Verificar a validade do token antes de prosseguir com a requisição principal
+        token_valid = verify_token_validity(access_token)
+        if not token_valid:
+            logger.warning("Token inválido detectado na verificação prévia. Tentando renovar...")
+            
+            # Tenta renovar o token
+            refresh_token = token_data.get("refresh_token")
+            token_refreshed = token_manager.refresh_token(refresh_token)
+            
+            if not token_refreshed:
+                # Não foi possível renovar o token
+                return JsonResponse({
+                    "error": "Token inválido e não foi possível renová-lo automaticamente. É necessário reautorizar a aplicação.",
+                    "auth_required": True
+                }, status=401)
+            
+            # Se conseguiu renovar, pega o novo token
+            token_data = token_manager.get_active_token()
+            access_token = token_data.get("access_token")
+        
         # Formato correto da URL base da API do Bling V3 
         base_url = "https://api.bling.com.br/Api/v3"
         url = f"{base_url}/{endpoint.lstrip('/')}"
@@ -265,16 +363,47 @@ def bling_api_request(request, endpoint, method="GET"):
         else:
             return JsonResponse({"error": f"Método HTTP não suportado: {method}"}, status=400)
         
-        # Verifica se o token expirou
-        if response.status_code == 401 and "invalid_token" in response.text:
-            logger.warning("Token expirado ou inválido. Tentando renovar...")
+        # Análise detalhada de erros de autenticação
+        if response.status_code == 401:
+            error_info = {}
+            try:
+                error_info = response.json()
+            except:
+                error_info = {"text": response.text}
             
-            # Tenta renovar o token
-            token_refreshed = token_manager.refresh_token(token_data.get("refresh_token"))
+            # Possíveis mensagens de erro de token
+            token_errors = [
+                "invalid_token",
+                "token revoked",
+                "token inválido",
+                "token expirado",
+                "token desativado",
+                "acesso negado"
+            ]
             
-            # Se o token foi renovado com sucesso, tenta a requisição novamente
-            if token_refreshed:
-                # Obtém o novo token
+            # Verifica se alguma das mensagens de erro está presente
+            error_text = json.dumps(error_info).lower()
+            is_token_error = any(error in error_text for error in token_errors)
+            
+            if is_token_error:
+                logger.warning(f"Erro de token detectado: {error_info}")
+                
+                # Tenta renovar o token
+                refresh_token = token_data.get("refresh_token")
+                token_refreshed = token_manager.refresh_token(refresh_token)
+                
+                if not token_refreshed:
+                    # Token não pôde ser renovado
+                    # Marca o token como inválido no sistema
+                    token_manager.mark_token_invalid(token_data, error_info)
+                    
+                    return JsonResponse({
+                        "error": "Token inválido e não foi possível renová-lo. É necessário reautorizar a aplicação.",
+                        "auth_required": True,
+                        "error_details": error_info
+                    }, status=401)
+                
+                # Se o token foi renovado com sucesso, tenta a requisição novamente
                 new_token_data = token_manager.get_active_token()
                 new_access_token = new_token_data.get("access_token")
                 
@@ -292,8 +421,14 @@ def bling_api_request(request, endpoint, method="GET"):
                     response = requests.put(url, headers=headers, json=json.loads(request.body) if request.body else {})
                 elif method.upper() == "DELETE":
                     response = requests.delete(url, headers=headers)
-            else:
-                return JsonResponse({"error": "Falha ao renovar token expirado"}, status=401)
+                
+                # Verifica se a requisição foi bem-sucedida após a renovação
+                if response.status_code == 401:
+                    logger.error("Falha na requisição mesmo após renovação do token")
+                    return JsonResponse({
+                        "error": "Falha na autenticação mesmo após renovação do token. É necessário reautorizar a aplicação.",
+                        "auth_required": True
+                    }, status=401)
         
         # Retorna os dados da API
         return JsonResponse(response.json() if response.content else {}, status=response.status_code)
@@ -301,6 +436,48 @@ def bling_api_request(request, endpoint, method="GET"):
     except Exception as e:
         logger.error(f"Erro ao realizar requisição para a API do Bling: {str(e)}")
         return JsonResponse({"error": f"Erro ao realizar requisição para a API do Bling: {str(e)}"}, status=500)
+
+def verify_token_validity(token):
+    """
+    Verifica se um token é válido fazendo uma requisição simples à API do Bling
+    
+    Args:
+        token: Token de acesso a ser verificado
+        
+    Returns:
+        bool: True se o token for válido, False caso contrário
+    """
+    try:
+        # Endpoint simples que requer autenticação
+        url = "https://api.bling.com.br/Api/v3/usuarios/me"
+        
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
+        }
+        
+        logger.info("Verificando validade do token com requisição de teste")
+        response = requests.get(url, headers=headers)
+        
+        # Verifica se a requisição foi bem-sucedida
+        if response.status_code == 200:
+            logger.info("Token verificado com sucesso")
+            return True
+        
+        # Se a resposta for 401, o token é inválido
+        if response.status_code == 401:
+            logger.warning(f"Token inválido: {response.text}")
+            return False
+        
+        # Para outros códigos de status, consideramos o token válido
+        # (pode ser um problema específico do endpoint, não do token)
+        logger.warning(f"Código de status inesperado na verificação do token: {response.status_code}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Erro ao verificar validade do token: {str(e)}")
+        # Em caso de erro, consideramos o token válido para evitar falsos negativos
+        return True
 
 def get_bling_produtos(request):
     """Endpoint para obter produtos do Bling."""
@@ -504,13 +681,16 @@ def delete_all_tokens(request):
             "error": f"Erro ao excluir tokens: {str(e)}"
         }, status=500)
 
-def generate_authorization_url(request):
+def generate_authorization_url(request, return_url_only=False):
     """
     Gera a URL de autorização para o Bling OAuth.
-    Endpoint: /api/auth/generate-url/
+    
+    Args:
+        request: Objeto de requisição do Django
+        return_url_only: Se True, retorna apenas a URL como string
     
     Returns:
-        JsonResponse com a URL de autorização
+        URL de autorização ou resposta JSON com a URL
     """
     try:
         client_id = settings.BLING_CLIENT_ID
@@ -518,6 +698,8 @@ def generate_authorization_url(request):
         
         if not client_id:
             logger.error("Client ID do Bling não configurado")
+            if return_url_only:
+                return None
             return JsonResponse({
                 "success": False,
                 "error": "Client ID do Bling não configurado"
@@ -531,6 +713,9 @@ def generate_authorization_url(request):
         # Constrói a URL de autorização
         auth_url = f"https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id={client_id}&state={state}&redirect_uri={redirect_uri}"
         
+        if return_url_only:
+            return auth_url
+            
         return JsonResponse({
             "success": True,
             "authorization_url": auth_url
@@ -538,6 +723,8 @@ def generate_authorization_url(request):
         
     except Exception as e:
         logger.error(f"Erro ao gerar URL de autorização: {str(e)}")
+        if return_url_only:
+            return None
         return JsonResponse({
             "success": False,
             "error": f"Erro ao gerar URL de autorização: {str(e)}"

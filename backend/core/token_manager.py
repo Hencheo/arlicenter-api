@@ -86,21 +86,21 @@ class TokenManager:
     
     def _deactivate_active_tokens(self):
         """
-        Desativa todos os tokens ativos no Firestore
+        Desativa todos os tokens ativos
         """
         try:
             # Busca todos os tokens ativos
-            active_tokens = self.collection.where('active', '==', True).stream()
+            query = self.collection.where('active', '==', True)
+            tokens = list(query.stream())
             
-            # Para cada token ativo, marca como inativo
-            batch = self.db.batch()
-            for token in active_tokens:
-                token_ref = self.collection.document(token.id)
-                batch.update(token_ref, {'active': False})
+            # Desativa cada token
+            for token_doc in tokens:
+                self.collection.document(token_doc.id).update({
+                    'active': False,
+                    'deactivated_at': firestore.SERVER_TIMESTAMP
+                })
             
-            # Executa o batch
-            batch.commit()
-            logger.info("Tokens anteriores desativados com sucesso")
+            logger.info(f"Todos os tokens ativos foram desativados: {len(tokens)} token(s)")
             
         except Exception as e:
             logger.error(f"Erro ao desativar tokens ativos: {str(e)}")
@@ -525,3 +525,69 @@ class TokenManager:
         except Exception as e:
             logger.error(f"Erro ao excluir tokens: {str(e)}")
             return 0
+    
+    def mark_token_invalid(self, token_data, error_info=None):
+        """
+        Marca um token como inválido e armazena informações sobre o erro
+        
+        Args:
+            token_data (dict): Dados do token
+            error_info (dict): Informações sobre o erro que causou a invalidação
+            
+        Returns:
+            bool: True se o token foi marcado como inválido com sucesso, False caso contrário
+        """
+        try:
+            if not token_data:
+                logger.warning("Tentativa de marcar token inválido com dados vazios")
+                return False
+            
+            # Busca todos os tokens ativos
+            query = self.collection.where('active', '==', True)
+            tokens = list(query.stream())
+            
+            # Marca cada token como inválido
+            for token_doc in tokens:
+                token_id = token_doc.id
+                current_data = token_doc.to_dict()
+                
+                # Verifica se é o mesmo token (comparando o access_token)
+                if current_data.get('access_token') == token_data.get('access_token'):
+                    update_data = {
+                        'active': False,
+                        'invalidated_at': firestore.SERVER_TIMESTAMP,
+                        'invalidation_reason': 'token_revoked_by_provider',
+                        'invalidation_error': error_info or {}
+                    }
+                    
+                    self.collection.document(token_id).update(update_data)
+                    logger.info(f"Token marcado como inválido. ID: {token_id}")
+            
+            # Salva também o status no arquivo local
+            try:
+                tokens_dir = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'bling_tokens'))
+                tokens_dir.mkdir(exist_ok=True)
+                
+                # Adiciona informações de invalidação
+                invalid_token_data = {
+                    **token_data,
+                    'active': False,
+                    'invalidated_at': datetime.datetime.now().isoformat(),
+                    'invalidation_reason': 'token_revoked_by_provider',
+                    'invalidation_error': error_info or {}
+                }
+                
+                # Salva em um arquivo específico
+                invalid_filename = tokens_dir / "token_invalid.json"
+                with open(invalid_filename, 'w') as f:
+                    json.dump(invalid_token_data, f, indent=4)
+                
+                logger.info(f"Informações de token inválido salvas localmente em {invalid_filename}")
+            except Exception as file_error:
+                logger.warning(f"Não foi possível salvar informações de token inválido localmente: {str(file_error)}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Erro ao marcar token como inválido: {str(e)}")
+            return False
