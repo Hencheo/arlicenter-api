@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import sys
 
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -44,8 +45,16 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "core",
-    "django_crontab",
 ]
+
+# Adiciona django_crontab apenas em ambientes Linux (como o Render)
+if sys.platform != 'win32':
+    INSTALLED_APPS.append("django_crontab")
+    # Configuração das tarefas cron (apenas para Linux)
+    CRONJOBS = [
+        # Verifica a expiração do token todos os dias às 8:00
+        ('0 8 * * *', 'core.cron.check_token_expiration'),
+    ]
 
 # Configurações do Bling
 BLING_CLIENT_ID = os.environ.get("BLING_CLIENT_ID", "")
@@ -217,11 +226,5 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'arlicenter@gmail.com'
 
 # Configurações de Notificação
 EMAIL_DESTINATARIO = os.environ.get('EMAIL_DESTINATARIO', 'gestaoarlicenter@gmail.com')
-TELEFONE_DESTINATARIO = os.environ.get('TELEFONE_DESTINATARIO', '+5517992717889') 
+TELEFONE_DESTINATARIO = os.environ.get('TELEFONE_DESTINATARIO', '+5517992717889')
 URL_AUTHORIZATION = os.environ.get('URL_AUTHORIZATION', 'https://arlicenter-api.onrender.com/auth/generate-auth-url/')
-
-# Tarefas agendadas (django-crontab)
-CRONJOBS = [
-    # Verifica a expiração do token todos os dias às 8:00
-    ('0 8 * * *', 'core.cron.check_token_expiration'),
-]
