@@ -117,10 +117,13 @@ export default function App() {
         `${API_URL}${ENDPOINTS.CPF_SEARCH_COMPLETE}?cpf=${cleanCpf}`
       );
       
+      console.log('Resposta da API:', response.data);
+      
       // Processando a resposta para manter compatibilidade com o formato esperado pelo componente
       const processedResult = {
         contato: response.data.data && response.data.data.length > 0 ? response.data.data[0] : null,
-        contas_a_receber: response.data.contas_a_receber || []
+        contas_a_receber: response.data.contas_a_receber || [],
+        contato_detalhes: response.data.contato_detalhes || {}
       };
       
       setResult(processedResult);
