@@ -1,0 +1,178 @@
+import { StyleSheet } from 'react-native';
+
+export const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    padding: 20,
+    paddingTop: 60,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+    color: '#333',
+  },
+  inputContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 16,
+    marginBottom: 5,
+    color: '#555',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 5,
+    padding: 10,
+    fontSize: 16,
+    marginBottom: 15,
+  },
+  button: {
+    backgroundColor: '#0066cc',
+    borderRadius: 5,
+    padding: 12,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  loader: {
+    marginTop: 30,
+  },
+  errorContainer: {
+    backgroundColor: '#ffebee',
+    padding: 15,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ffcdd2',
+    marginBottom: 20,
+  },
+  errorText: {
+    color: '#c62828',
+    fontSize: 14,
+  },
+  resultContainer: {
+    flex: 1,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#333',
+  },
+  contactInfo: {
+    fontSize: 16,
+    color: '#555',
+    marginBottom: 5,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    color: '#333',
+  },
+  debtCard: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  debtTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#444',
+  },
+  debtDetail: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+  },
+  debtLabel: {
+    fontSize: 15,
+    color: '#666',
+  },
+  debtValue: {
+    fontSize: 15,
+    color: '#333',
+    fontWeight: '500',
+  },
+  debtStatus: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  statusOpen: {
+    backgroundColor: '#ffecb3',
+    color: '#ff8f00',
+  },
+  statusClosed: {
+    backgroundColor: '#c8e6c9',
+    color: '#2e7d32',
+  },
+  noResultsText: {
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#777',
+    marginTop: 20,
+    fontStyle: 'italic',
+  },
+  // Novos estilos para agrupamento por mês
+  monthGroup: {
+    marginBottom: 15,
+  },
+  monthHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#e3f2fd',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 5,
+  },
+  monthTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0066cc',
+  },
+  expandIcon: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0066cc',
+  },
+  monthSummary: {
+    fontSize: 14,
+    color: '#555',
+  },
+}); 
