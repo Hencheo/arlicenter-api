@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Regra para coleção de usuários
+    match /users/{userCpf} {
+      // Permitir leitura apenas para o próprio usuário ou admin
+      allow read: if request.auth != null && 
+                  (request.auth.uid == userCpf || 
+                   get(/databases/$(database)/documents/users/$(request.auth.uid)).data.perfil == 'administrador');
+      
+      // Permitir criação apenas para administradores
+      allow create: if request.auth != null && 
+                   get(/databases/$(database)/documents/users/$(request.auth.uid)).data.perfil == 'administrador';
+      
+      // Permitir que o usuário atualize apenas alguns campos específicos
+      allow update: if request.auth != null && 
+                    (
+                      // Administradores podem atualizar tudo
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.perfil == 'administrador' ||
+                      // Usuários podem atualizar apenas seus próprios dados limitados
+                      (request.auth.uid == userCpf && 
+                       request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['email', 'telefone', 'ultimo_acesso', 'senha_hash']))
+                    );
+      
+      // Apenas administradores podem excluir usuários
+      allow delete: if request.auth != null && 
+                     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.perfil == 'administrador';
+    }
+    
+    // Regra para coleção de tokens (já existente)
+    match /bling_tokens/{tokenId} {
+      // Apenas administradores podem acessar tokens
+      allow read, write: if request.auth != null && 
+                          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.perfil == 'administrador';
+    }
+  }
+} 

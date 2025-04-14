@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "core",
+    "django_crontab",
 ]
 
 # Configurações do Bling
@@ -183,7 +184,7 @@ LOGGING = {
 }
 
 # Configurações de CORS
-CORS_ALLOWED_ORIGINS = ["http://localhost:8082"]
+CORS_ALLOWED_ORIGINS = ["http://localhost:8082", "https://arlicenter-api.onrender.com", "http://localhost:8081"]
 
 # Defina apenas uma das configurações: ou CORS_ALLOWED_ORIGINS ou CORS_ALLOW_ALL_ORIGINS
 # Comentando a linha abaixo para evitar conflitos
@@ -203,4 +204,24 @@ CORS_ALLOW_HEADERS = [
     "user-agent",
     "x-csrftoken",
     "x-requested-with",
+]
+
+# Configurações de Email
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'arlicenter@gmail.com')
+
+# Configurações de Notificação
+EMAIL_DESTINATARIO = os.environ.get('EMAIL_DESTINATARIO', 'gestaoarlicenter@gmail.com')
+TELEFONE_DESTINATARIO = os.environ.get('TELEFONE_DESTINATARIO', '+5517992717889') 
+URL_AUTHORIZATION = os.environ.get('URL_AUTHORIZATION', 'https://arlicenter-api.onrender.com/auth/generate-auth-url/')
+
+# Tarefas agendadas (django-crontab)
+CRONJOBS = [
+    # Verifica a expiração do token todos os dias às 8:00
+    ('0 8 * * *', 'core.cron.check_token_expiration'),
 ]
