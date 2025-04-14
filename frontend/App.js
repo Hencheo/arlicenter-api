@@ -185,6 +185,46 @@ export default function App() {
     }).format(value);
   };
 
+  // Formata percentual para exibição
+  const formatPercentage = (value) => {
+    if (!value && value !== 0) return '---';
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'percent',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1
+    }).format(value);
+  };
+
+  // Calcula o percentual de utilização do limite de crédito
+  const calculateCreditUsagePercentage = () => {
+    if (!result || !result.contato_detalhes || !result.contato_detalhes.financeiro) return null;
+    
+    const limiteCredito = result.contato_detalhes.financeiro?.limiteCredito || 0;
+    
+    // Calcula o total das contas a receber em aberto
+    const totalReceberEmAberto = result.contas_a_receber
+      ? result.contas_a_receber
+          .filter(conta => conta.situacao === 1 || conta.situacao === 'aberto')
+          .reduce((total, conta) => total + (conta.valor || 0), 0)
+      : 0;
+    
+    // Se não há limite de crédito, retorna 1 (100%)
+    if (limiteCredito === 0) return 1;
+    
+    // Calcula o percentual utilizado
+    const percentualUtilizado = totalReceberEmAberto / limiteCredito;
+    
+    return percentualUtilizado;
+  };
+
+  // Determina a cor do indicador de limite de crédito com base no percentual utilizado
+  const getCreditLimitColor = (percentage) => {
+    if (percentage === null) return '#999'; // Cinza para desconhecido
+    if (percentage >= 1) return '#FF3B30'; // Vermelho para 100% ou acima
+    if (percentage >= 0.8) return '#FF9500'; // Laranja para 80% ou acima
+    return '#34C759'; // Verde para menos de 80%
+  };
+
   // Formata data para padrão brasileiro
   const formatDate = (dateString) => {
     if (!dateString) return '---';
@@ -313,6 +353,33 @@ export default function App() {
             <Text style={styles.contactInfo}>CPF/CNPJ: {result.contato?.numeroDocumento || '---'}</Text>
             <Text style={styles.contactInfo}>Telefone: {result.contato?.telefone || '---'}</Text>
             <Text style={styles.contactInfo}>Email: {result.contato?.email || '---'}</Text>
+            
+            {/* Informações de limite de crédito */}
+            {result.contato_detalhes && result.contato_detalhes.financeiro && (
+              <View style={styles.creditLimitContainer}>
+                <Text style={styles.creditLimitTitle}>Limite de Crédito:</Text>
+                <Text style={styles.creditLimitValue}>
+                  {formatCurrency(result.contato_detalhes.financeiro.limiteCredito || 0)}
+                </Text>
+                
+                {/* Barra de progresso do limite utilizado */}
+                <View style={styles.progressBarContainer}>
+                  <View 
+                    style={[
+                      styles.progressBar, 
+                      { 
+                        width: `${Math.min((calculateCreditUsagePercentage() || 0) * 100, 100)}%`,
+                        backgroundColor: getCreditLimitColor(calculateCreditUsagePercentage())
+                      }
+                    ]} 
+                  />
+                </View>
+                
+                <Text style={styles.creditUsageInfo}>
+                  Utilizado: {formatPercentage(calculateCreditUsagePercentage() || 0)}
+                </Text>
+              </View>
+            )}
           </View>
 
           <Text style={styles.sectionTitle}>Contas a Receber</Text>

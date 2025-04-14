@@ -401,6 +401,39 @@ def fluxo_completo(token, cpf, situacao=None):
     
     print(f"Contato encontrado: {nome_contato} (ID: {id_contato})")
     
+    # Buscar os detalhes do contato para obter o limite de crédito
+    url_detalhes = f"https://api.bling.com.br/Api/v3/contatos/{id_contato}"
+    
+    # Verifica se o token já tem o prefixo "Bearer"
+    auth_token = token
+    if not token.startswith("Bearer "):
+        auth_token = f"Bearer {token}"
+    
+    headers = {
+        "Accept": "application/json",
+        "Authorization": auth_token,
+        "Content-Type": "application/json"
+    }
+    
+    print(f"Buscando detalhes do contato com ID: {id_contato}")
+    try:
+        response_detalhes = requests.get(url_detalhes, headers=headers)
+        
+        print(f"Status code (detalhes): {response_detalhes.status_code}")
+        
+        if response_detalhes.status_code != 200:
+            print(f"Erro ao buscar detalhes do contato: {response_detalhes.status_code}")
+            detalhes_contato = None
+        else:
+            detalhes_contato = response_detalhes.json()
+            
+            # Extrai e exibe o limite de crédito
+            limite_credito = detalhes_contato.get('financeiro', {}).get('limiteCredito', 0)
+            print(f"Limite de crédito: R$ {limite_credito:.2f}".replace('.', ','))
+    except Exception as e:
+        print(f"Exceção ao fazer a requisição de detalhes: {str(e)}")
+        detalhes_contato = None
+    
     # Busca as contas a receber deste contato
     resultado_contas = buscar_contas_a_receber_por_contato(token, id_contato, situacao)
     if not resultado_contas:
@@ -410,6 +443,7 @@ def fluxo_completo(token, cpf, situacao=None):
     # Monta o resultado completo
     resultado = {
         "contato": contato,
+        "detalhes_contato": detalhes_contato,
         "contas_a_receber": resultado_contas.get('data', [])
     }
     
@@ -547,6 +581,23 @@ def modo_interativo():
         qtd_contas = len(resultado['contas_a_receber'])
         print(f"\nResultado para {nome}: {qtd_contas} contas a receber encontradas")
         
+        # Exibe o limite de crédito
+        if resultado.get('detalhes_contato') and resultado['detalhes_contato'].get('financeiro'):
+            limite_credito = resultado['detalhes_contato']['financeiro'].get('limiteCredito', 0)
+            print(f"\nLimite de crédito: R$ {limite_credito:.2f}".replace('.', ','))
+            
+            # Calcula o total das contas a receber em aberto
+            total_valor_aberto = 0
+            for conta in resultado['contas_a_receber']:
+                if conta.get('situacao') == 1 or conta.get('situacao') == 'aberto':
+                    total_valor_aberto += float(conta.get('valor', 0))
+            
+            # Calcula o percentual do limite utilizado
+            if limite_credito > 0:
+                percentual_utilizado = (total_valor_aberto / limite_credito) * 100
+                print(f"Total em aberto: R$ {total_valor_aberto:.2f}".replace('.', ','))
+                print(f"Percentual do limite utilizado: {percentual_utilizado:.1f}%".replace('.', ','))
+        
         # Mostra resumo das contas
         if qtd_contas > 0:
             print("\nResumo das contas a receber:")
@@ -658,6 +709,23 @@ def main():
             nome = resultado['contato']['nome']
             qtd_contas = len(resultado['contas_a_receber'])
             print(f"\nResultado para {nome}: {qtd_contas} contas a receber encontradas")
+            
+            # Exibe o limite de crédito
+            if resultado.get('detalhes_contato') and resultado['detalhes_contato'].get('financeiro'):
+                limite_credito = resultado['detalhes_contato']['financeiro'].get('limiteCredito', 0)
+                print(f"\nLimite de crédito: R$ {limite_credito:.2f}".replace('.', ','))
+                
+                # Calcula o total das contas a receber em aberto
+                total_valor_aberto = 0
+                for conta in resultado['contas_a_receber']:
+                    if conta.get('situacao') == 1 or conta.get('situacao') == 'aberto':
+                        total_valor_aberto += float(conta.get('valor', 0))
+                
+                # Calcula o percentual do limite utilizado
+                if limite_credito > 0:
+                    percentual_utilizado = (total_valor_aberto / limite_credito) * 100
+                    print(f"Total em aberto: R$ {total_valor_aberto:.2f}".replace('.', ','))
+                    print(f"Percentual do limite utilizado: {percentual_utilizado:.1f}%".replace('.', ','))
             
             # Mostra resumo das contas
             if qtd_contas > 0:

@@ -175,4 +175,39 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: '#555',
   },
+  // Estilos para o limite de crédito
+  creditLimitContainer: {
+    marginTop: 15,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  creditLimitTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#444',
+    marginBottom: 5,
+  },
+  creditLimitValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0066cc',
+    marginBottom: 8,
+  },
+  progressBarContainer: {
+    height: 10,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 5,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  creditUsageInfo: {
+    fontSize: 14,
+    color: '#555',
+    textAlign: 'right',
+  },
 }); 
