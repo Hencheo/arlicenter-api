@@ -45,6 +45,20 @@ except ImportError as e:
             logging.error("Método verify_password chamado, mas UserManager não está disponível.")
             return False
 
+# Importa o gerenciador de notificações
+try:
+    from core.notification_manager import NotificationManager
+except ImportError as e:
+    logging.error(f"Erro ao importar NotificationManager: {e}")
+    # Classe temporária para evitar falhas completas caso a importação falhe
+    class NotificationManager:
+        def __init__(self):
+            logging.error("NotificationManager não pôde ser carregado corretamente.")
+            
+        def check_token_expiration(self, token_manager):
+            logging.error("Método check_token_expiration chamado, mas NotificationManager não está disponível.")
+            return False
+
 # Configurar logger
 logger = logging.getLogger(__name__)
 
@@ -328,9 +342,13 @@ def bling_api_request(request, endpoint, method="GET"):
             
             if not token_refreshed:
                 # Não foi possível renovar o token
+                # Marca o token como inválido no sistema
+                token_manager.mark_token_invalid(token_data, error_info)
+                
                 return JsonResponse({
-                    "error": "Token inválido e não foi possível renová-lo automaticamente. É necessário reautorizar a aplicação.",
-                    "auth_required": True
+                    "error": "Token inválido e não foi possível renová-lo. É necessário reautorizar a aplicação.",
+                    "auth_required": True,
+                    "error_details": error_info
                 }, status=401)
             
             # Se conseguiu renovar, pega o novo token
@@ -728,4 +746,121 @@ def generate_authorization_url(request, return_url_only=False):
         return JsonResponse({
             "success": False,
             "error": f"Erro ao gerar URL de autorização: {str(e)}"
+        }, status=500)
+
+def verify_token_expiration(request):
+    """
+    Verifica manualmente a expiração do refresh token e envia notificações se necessário.
+    Endpoint: /api/token/verify-expiration/
+    
+    Returns:
+        JsonResponse com o status da verificação
+    """
+    try:
+        # Inicializa os gerenciadores
+        token_manager = TokenManager()
+        notification_manager = NotificationManager()
+        
+        # Obtém o token ativo para verificar se existe
+        token_data = token_manager.get_active_token()
+        
+        if not token_data:
+            return JsonResponse({
+                "status": "error",
+                "message": "Nenhum token ativo encontrado para verificar",
+                "auth_required": True,
+                "authorization_url": generate_authorization_url(request, return_url_only=True)
+            }, status=404)
+        
+        # Verifica a expiração do token
+        notification_sent = notification_manager.check_token_expiration(token_manager)
+        
+        # Obtém informações de criação e expiração
+        created_at = token_data.get('created_at')
+        expires_in = token_data.get('expires_in', 21600)  # access token (6 horas)
+        
+        # Converte para datetime se for um timestamp do Firestore
+        if hasattr(created_at, 'seconds') and hasattr(created_at, 'nanos'):
+            # É um timestamp do Firestore
+            created_at = datetime.fromtimestamp(created_at.seconds + created_at.nanos/1e9)
+        elif isinstance(created_at, str):
+            # É uma string ISO (possivelmente de um fallback local)
+            try:
+                created_at = datetime.fromisoformat(created_at)
+            except ValueError:
+                created_at = datetime.now()
+        
+        # Calcula a expiração do access token e refresh token
+        from datetime import timedelta
+        access_expires_at = created_at + timedelta(seconds=expires_in)
+        refresh_expires_at = created_at + timedelta(days=30)
+        
+        # Tempo restante em formato legível
+        from django.utils import timezone
+        now = timezone.now()
+        
+        # Se as datas não têm timezone, adiciona
+        if timezone.is_naive(created_at):
+            created_at = timezone.make_aware(created_at)
+        
+        # Formata tempos restantes
+        access_days_remaining = (access_expires_at - now).days if hasattr(access_expires_at, 'days') else None
+        refresh_days_remaining = (refresh_expires_at - now).days
+        
+        result = {
+            "status": "success",
+            "message": "Verificação de expiração concluída",
+            "token_info": {
+                "created_at": created_at.isoformat() if created_at else None,
+                "access_token_expires_at": access_expires_at.isoformat() if hasattr(access_expires_at, 'isoformat') else None,
+                "refresh_token_expires_at": refresh_expires_at.isoformat(),
+                "access_token_days_remaining": access_days_remaining,
+                "refresh_token_days_remaining": refresh_days_remaining
+            },
+            "notification_sent": notification_sent
+        }
+        
+        # Se uma notificação foi enviada, adiciona detalhes
+        if notification_sent:
+            result["notification_info"] = {
+                "sent_at": timezone.now().isoformat(),
+                "type": "emergency" if refresh_days_remaining <= 1 else "regular",
+                "email": settings.EMAIL_DESTINATARIO
+            }
+        
+        return JsonResponse(result)
+        
+    except Exception as e:
+        logger.error(f"Erro ao verificar expiração do token: {str(e)}")
+        return JsonResponse({
+            "status": "error",
+            "error": f"Erro ao verificar expiração do token: {str(e)}"
+        }, status=500)
+
+def run_token_expiration_check(request):
+    """
+    Executa manualmente a tarefa agendada de verificação de expiração do token.
+    Útil para testes em ambientes Windows onde o crontab não funciona.
+    Endpoint: /api/token/run-expiration-check/
+    
+    Returns:
+        JsonResponse com o resultado da verificação
+    """
+    try:
+        # Importa a função do cron.py
+        from core.cron import check_token_expiration
+        
+        # Executa a verificação
+        check_token_expiration()
+        
+        return JsonResponse({
+            "status": "success",
+            "message": "Verificação de expiração executada manualmente com sucesso"
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao executar verificação manual de expiração: {str(e)}")
+        return JsonResponse({
+            "status": "error",
+            "error": f"Erro ao executar verificação manual: {str(e)}"
         }, status=500)
