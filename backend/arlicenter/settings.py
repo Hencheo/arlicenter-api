@@ -47,14 +47,21 @@ INSTALLED_APPS = [
     "core",
 ]
 
-# Adiciona django_crontab apenas em ambientes Linux (como o Render)
-if sys.platform != 'win32':
-    INSTALLED_APPS.append("django_crontab")
-    # Configuração das tarefas cron (apenas para Linux)
-    CRONJOBS = [
-        # Verifica a expiração do token todos os dias às 8:00
-        ('0 8 * * *', 'core.cron.check_token_expiration'),
-    ]
+# Verificação se deve utilizar o django-crontab
+# No ambiente de produção (Render), defina ENABLE_CRONTAB=true
+# No ambiente de desenvolvimento Windows, deixe ENABLE_CRONTAB vazio ou false
+if os.environ.get('ENABLE_CRONTAB', '').lower() == 'true':
+    try:
+        import django_crontab
+        INSTALLED_APPS.append("django_crontab")
+        # Configuração das tarefas cron
+        CRONJOBS = [
+            # Verifica a expiração do token todos os dias às 8:00
+            ('0 8 * * *', 'core.cron.check_token_expiration'),
+        ]
+        print("Django-crontab habilitado com sucesso!")
+    except ImportError:
+        print("Aviso: django-crontab não pôde ser importado, as tarefas agendadas não funcionarão.")
 
 # Configurações do Bling
 BLING_CLIENT_ID = os.environ.get("BLING_CLIENT_ID", "")
